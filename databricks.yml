@@ -1,0 +1,24 @@
+bundle:
+  name: pbianalyzer
+
+sync:
+  include:
+    - .build
+
+artifacts:
+  default:
+    build: apx build
+
+resources:
+  apps:
+    pbianalyzer-app:
+      name: "pbianalyzer"
+      description: "pbianalyzer created with apx"
+      source_code_path: ./.build
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      profile: e2-field-eng

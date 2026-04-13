@@ -1,0 +1,518 @@
+rules:
+  # ── Data Model ──────────────────────────────────────────────────
+  - id: model_wide_table
+    category: data_model
+    name: Wide Table Detected
+    description: Tables with more than 30 columns increase memory pressure and slow scans
+    severity: warning
+    impact: high
+    threshold:
+      max_columns: 30
+    recommendation: >
+      Split wide tables into a star schema with a narrow fact table and separate dimension tables.
+      Move descriptive/text columns into dimension tables joined by surrogate keys.
+    reference: "https://learn.microsoft.com/power-bi/guidance/star-schema"
+
+  - id: model_single_flat_table
+    category: data_model
+    name: Single Flat Table Model
+    description: Model contains only one table with no relationships — likely a denormalized flat table
+    severity: warning
+    impact: high
+    recommendation: >
+      Refactor into a star schema with fact and dimension tables for better
+      compression, query performance, and maintainability.
+    reference: "https://learn.microsoft.com/power-bi/guidance/star-schema"
+
+  - id: model_bidir_crossfilter
+    category: data_model
+    name: Bidirectional Cross-Filter
+    description: Bidirectional cross-filtering can cause ambiguous filter paths and performance issues
+    severity: warning
+    impact: medium
+    recommendation: >
+      Change to single-direction cross-filtering unless bidirectional is strictly required.
+      Bidirectional filters can cause ambiguous results and slower queries.
+    reference: "https://learn.microsoft.com/power-bi/guidance/relationships-bidirectional-filtering"
+
+  - id: model_many_to_many
+    category: data_model
+    name: Many-to-Many Relationship
+    description: Many-to-many relationships bypass query folding and can produce unexpected results
+    severity: warning
+    impact: medium
+    recommendation: >
+      Introduce a bridge table or refactor the model to use standard one-to-many relationships.
+    reference: "https://learn.microsoft.com/power-bi/guidance/relationships-many-to-many"
+
+  - id: model_orphan_table
+    category: data_model
+    name: Orphan Table (No Relationships)
+    description: Table is not connected to any other table via relationships
+    severity: info
+    impact: low
+    recommendation: >
+      Either create relationships to connect this table to the model,
+      hide it if it is a helper table, or remove it if unused.
+    reference: ""
+
+  - id: model_generated_date_table
+    category: data_model
+    name: DAX-Generated Date/Calendar Table
+    description: Calculated tables using CALENDAR/CALENDARAUTO generate extra SQL queries vs persisted tables
+    severity: warning
+    impact: high
+    recommendation: >
+      Replace DAX-generated date tables with a persisted Delta table in Databricks
+      and set it to Dual storage mode. This eliminates extra SQL queries and improves
+      DirectQuery performance.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/11.%20Generated%20vs%20Persisted%20dimension"
+
+  - id: model_missing_date_marking
+    category: data_model
+    name: Date Table Not Marked
+    description: No table is marked as a date table, which disables time intelligence optimizations
+    severity: info
+    impact: low
+    recommendation: >
+      Mark your date dimension table as a Date Table in Power BI to enable
+      built-in time intelligence functions.
+    reference: "https://learn.microsoft.com/power-bi/guidance/model-date-tables"
+
+  - id: model_no_aggregation_tables
+    category: data_model
+    name: No Aggregation Tables for Large DirectQuery Model
+    description: Large DirectQuery fact tables without aggregation tables cause full scans on every query
+    severity: warning
+    impact: high
+    recommendation: >
+      Create pre-aggregated tables in Databricks (materialized views or aggregate tables)
+      and configure user-defined aggregations in Power BI to serve common queries from
+      smaller cached datasets.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/05.%20User-defined%20Aggregations"
+
+  # ── DAX Quality & Pushdown ─────────────────────────────────────
+  - id: dax_complex_measure
+    category: dax_quality
+    name: Complex DAX Measure
+    description: Measure exceeds complexity threshold — long expressions with deep nesting generate inefficient SQL
+    severity: warning
+    impact: medium
+    threshold:
+      max_length: 500
+      max_calculate_depth: 3
+    recommendation: >
+      Simplify the measure or push the computation upstream into a Databricks SQL
+      view or materialized view. Complex DAX on DirectQuery tables generates
+      multiple inefficient SQL queries.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/10.%20Pushdown%20Calculations"
+
+  - id: dax_calculate_related_filter
+    category: dax_quality
+    name: CALCULATE with Related Table Filter
+    description: CALCULATE measures filtering on related tables generate separate SQL queries per measure
+    severity: warning
+    impact: high
+    recommendation: >
+      Push the calculation down to a Databricks SQL view that pre-computes the
+      filtered aggregation, then use a simple SUM/COUNT in DAX. This collapses
+      N separate SQL queries into one.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/10.%20Pushdown%20Calculations"
+
+  - id: dax_row_by_row
+    category: dax_quality
+    name: Row-by-Row DAX Pattern
+    description: SUMX/ADDCOLUMNS with complex inner expressions process rows one at a time
+    severity: warning
+    impact: medium
+    recommendation: >
+      Replace row-by-row iteration with set-based DAX patterns or push the
+      computation to a Databricks SQL view using GROUP BY.
+    reference: ""
+
+  - id: dax_time_intelligence_suboptimal
+    category: dax_quality
+    name: Suboptimal Time Intelligence Pattern
+    description: Time intelligence DAX on DirectQuery generates multiple queries when not using calendar tables
+    severity: info
+    impact: medium
+    recommendation: >
+      Use a persisted calendar table in Dual mode and calendar-based time
+      intelligence patterns for more efficient SQL generation.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/15.%20Calendar-based%20Time%20Intelligence"
+
+  # ── Storage Modes ──────────────────────────────────────────────
+  - id: storage_dim_not_dual
+    category: storage_modes
+    name: Dimension Table Not Using Dual Mode
+    description: Dimension table is in DirectQuery mode instead of Dual — causes unnecessary SQL queries for slicers/filters
+    severity: warning
+    impact: high
+    recommendation: >
+      Set dimension tables to Dual storage mode. Power BI intelligently switches
+      between Import (for slicers/filters) and DirectQuery (for joins with fact tables),
+      dramatically improving performance.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/02.%20Storage%20Modes"
+
+  - id: storage_import_dim_with_dq_fact
+    category: storage_modes
+    name: Import Dimension Connected to DirectQuery Fact
+    description: Import dimensions force Power BI to pull large result sets from DirectQuery fact tables
+    severity: warning
+    impact: high
+    recommendation: >
+      Switch the dimension table to Dual mode instead of Import. Import dimensions
+      connected to DirectQuery facts cause Power BI to retrieve excessive rows
+      from the backend.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/02.%20Storage%20Modes"
+
+  - id: storage_all_dq_complex_dax
+    category: storage_modes
+    name: Full DirectQuery with Complex DAX
+    description: All tables are DirectQuery with complex DAX measures — high risk of poor query performance
+    severity: warning
+    impact: high
+    recommendation: >
+      Consider a Composite model with dimension tables in Dual mode and
+      pre-aggregated tables in Import mode for frequently queried summaries.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/02.%20Storage%20Modes"
+
+  # ── Parallelization & Concurrency ──────────────────────────────
+  - id: parallel_max_parallelism_default
+    category: parallelization
+    name: MaxParallelismPerQuery Not Tuned
+    description: Default query parallelism may throttle DirectQuery performance on higher-SKU capacities
+    severity: info
+    impact: medium
+    recommendation: >
+      Increase MaxParallelismPerQuery in the semantic model properties using
+      Tabular Editor to match the number of concurrent SQL queries your reports generate.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/04.%20Query%20Parallelization"
+
+  - id: parallel_max_connections_default
+    category: parallelization
+    name: DataSourceDefaultMaxConnections at Default
+    description: The default limit of 10 connections may bottleneck concurrency on P3/A6 and higher SKUs
+    severity: info
+    impact: medium
+    recommendation: >
+      Increase DataSourceDefaultMaxConnections using Tabular Editor (set
+      CompatibilityLevel to 1569 first). Also ensure your Databricks SQL Warehouse
+      has sufficient concurrency (min 2 clusters).
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/14.%20Data%20Source%20Default%20Max%20Connections"
+
+  # ── Report Design ──────────────────────────────────────────────
+  - id: report_too_many_visuals
+    category: report_design
+    name: Too Many Visuals Per Page
+    description: Pages with many visuals generate excessive concurrent SQL queries
+    severity: warning
+    impact: high
+    threshold:
+      max_visuals: 20
+    recommendation: >
+      Split pages with more than 20 visuals into multiple focused pages
+      or use bookmarks/drill-through to reduce concurrent query load.
+    reference: ""
+
+  - id: report_many_pages
+    category: report_design
+    name: High Page Count
+    description: Reports with many pages may indicate over-scoping and maintenance burden
+    severity: info
+    impact: low
+    threshold:
+      max_pages: 15
+    recommendation: >
+      Consider consolidating related pages or splitting into separate reports.
+    reference: ""
+
+  # ── Connectivity ───────────────────────────────────────────────
+  - id: conn_hardcoded_connection
+    category: connectivity
+    name: Hardcoded Connection String
+    description: Connection strings contain hardcoded server/path values instead of Power BI parameters
+    severity: warning
+    impact: medium
+    recommendation: >
+      Parameterize Hostname and HttpPath as Power BI parameters to simplify
+      environment switching and report management.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/01.%20Connection%20Parameters"
+
+  - id: conn_non_native_connector
+    category: connectivity
+    name: Non-Native Databricks Connector
+    description: Connection uses generic ODBC/JDBC instead of the native Databricks connector
+    severity: warning
+    impact: medium
+    recommendation: >
+      Switch to the native Databricks connector in Power BI for better
+      performance, CloudFetch support, and OAuth integration.
+    reference: ""
+
+  - id: conn_pat_auth
+    category: connectivity
+    name: PAT-Based Authentication Detected
+    description: Personal Access Tokens are less secure and harder to manage than OAuth/SSO
+    severity: info
+    impact: medium
+    recommendation: >
+      Migrate to M2M OAuth or Entra ID SSO authentication for better security,
+      auditability, and credential rotation.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/13.%20M2M%20OAuth%20Credentials%20Management"
+
+  # ── DBSQL Performance ──────────────────────────────────────────
+  - id: dbsql_slow_queries
+    category: dbsql_performance
+    name: Slow Queries Detected
+    description: Queries exceeding latency thresholds indicate performance issues
+    severity: warning
+    impact: high
+    threshold:
+      p95_seconds: 10
+    recommendation: >
+      Investigate slow queries via Databricks Query Profiles. Common fixes include
+      adding table statistics (ANALYZE TABLE), running OPTIMIZE, configuring liquid
+      clustering, or creating materialized views.
+    reference: ""
+
+  - id: dbsql_duplicate_queries
+    category: dbsql_performance
+    name: Duplicate/Similar Queries
+    description: Multiple visuals generating near-identical SQL queries waste warehouse resources
+    severity: warning
+    impact: high
+    recommendation: >
+      Consolidate visuals that generate similar queries, use user-defined
+      aggregations, or push calculations into Databricks SQL views to reduce
+      duplicate query execution.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/05.%20User-defined%20Aggregations"
+
+  - id: dbsql_high_row_scans
+    category: dbsql_performance
+    name: Queries Scanning Excessive Rows
+    description: Queries reading millions of rows suggest missing aggregations or filters
+    severity: warning
+    impact: high
+    threshold:
+      max_rows_read: 10000000
+    recommendation: >
+      Create materialized views or aggregate tables in Databricks for frequently
+      queried patterns. Also ensure tables have proper clustering/partitioning and
+      that PK constraints with RELY are set for join elimination.
+    reference: "https://github.com/databricks-solutions/power-bi-on-databricks-quickstarts/tree/main/07.%20Query%20optimization%20using%20PK"
+
+  - id: dbsql_query_errors
+    category: dbsql_performance
+    name: Failed Queries Detected
+    description: Queries with errors indicate configuration or SQL generation issues
+    severity: error
+    impact: high
+    recommendation: >
+      Review error messages for common issues like permissions, missing tables,
+      or timeout errors. Check that the semantic model schema matches the Databricks schema.
+    reference: ""
+
+  # ── Query Profile Analysis ──────────────────────────────────────
+  - id: qp_slow_query
+    category: dbsql_performance
+    name: Slow Query (Profile)
+    description: Query total execution time exceeds performance threshold
+    severity: warning
+    impact: high
+    threshold:
+      total_time_ms: 10000
+    recommendation: >
+      Investigate the query profile for bottlenecks. Check for data skew,
+      missing statistics (ANALYZE TABLE), or opportunities to add liquid
+      clustering, materialized views, or predicate pushdown.
+
+  - id: qp_slow_compilation
+    category: dbsql_performance
+    name: High Compilation Time
+    description: Query plan compilation takes disproportionately long
+    severity: warning
+    impact: medium
+    threshold:
+      compilation_time_ms: 3000
+    recommendation: >
+      Simplify query structure — reduce CTEs, subqueries, and joins. For
+      Power BI, push complex calculations to Databricks SQL views.
+
+  - id: qp_spill_to_disk
+    category: dbsql_performance
+    name: Spill to Disk
+    description: Query operations exceed available memory and spill to disk
+    severity: warning
+    impact: high
+    recommendation: >
+      Increase warehouse size, reduce data skew, or pre-aggregate data.
+
+  - id: qp_scan_output_ratio
+    category: dbsql_performance
+    name: Extreme Scan-to-Output Ratio
+    description: Vastly more data read than produced, indicating missing aggregations
+    severity: error
+    impact: high
+    threshold:
+      max_bytes_per_output_row: 10000000
+    recommendation: >
+      Create materialized views or aggregate tables. Use predicate pushdown
+      and liquid clustering for partition pruning.
+
+  - id: qp_duplicate_table_scans
+    category: dbsql_performance
+    name: Duplicate Table Scans
+    description: Same table scanned multiple times in a single query
+    severity: warning
+    impact: medium
+    recommendation: >
+      Restructure query to scan each table once. Push logic into views.
+
+  - id: qp_nested_loop_join
+    category: dbsql_performance
+    name: Nested Loop Join
+    description: O(n*m) join algorithm detected — very slow for large datasets
+    severity: warning
+    impact: high
+    recommendation: >
+      Add join predicates for hash joins. Use ANALYZE TABLE for statistics.
+
+  - id: qp_excessive_shuffles
+    category: dbsql_performance
+    name: Excessive Shuffle Exchanges
+    description: Too many shuffle operations cause network overhead
+    severity: warning
+    impact: medium
+    threshold:
+      max_shuffles: 6
+    recommendation: >
+      Pre-aggregate data, use broadcast joins for small tables, or
+      cluster tables on frequently-joined columns.
+
+  - id: qp_subquery_detected
+    category: dbsql_performance
+    name: Subquery in Plan
+    description: Subquery nodes in execution plan may execute per outer row
+    severity: info
+    impact: low
+    recommendation: >
+      Consider rewriting as JOIN or CTE. Push logic into Databricks views.
+
+  - id: qp_wide_row_scan
+    category: dbsql_performance
+    name: Wide Row Scan
+    description: High bytes-per-row indicates scanning many unused columns
+    severity: warning
+    impact: medium
+    threshold:
+      max_bytes_per_row: 500000
+    recommendation: >
+      Select only needed columns. Remove unused columns from Power BI model.
+
+  - id: qp_cartesian_join
+    category: dbsql_performance
+    name: Cartesian / Cross Join
+    description: Cross join produces O(n*m) rows and explodes data volume
+    severity: error
+    impact: high
+    recommendation: >
+      Add a proper join condition. Pre-filter both sides if cross join is needed.
+
+  - id: qp_sort_merge_small_table
+    category: dbsql_performance
+    name: SortMergeJoin on Small Table
+    description: Sort-merge join used where broadcast hash join would be faster
+    severity: warning
+    impact: high
+    recommendation: >
+      Run ANALYZE TABLE to give the optimizer accurate stats. Use BROADCAST hints
+      or increase spark.sql.autoBroadcastJoinThreshold.
+
+  - id: qp_scan_hotspot
+    category: dbsql_performance
+    name: Scan Hotspot
+    description: A single table scan dominates query execution time
+    severity: warning
+    impact: high
+    recommendation: >
+      Apply Liquid Clustering on the dominant table's filter/join columns.
+      Run OPTIMIZE and ANALYZE TABLE.
+
+  - id: qp_small_files
+    category: dbsql_performance
+    name: Small File Problem
+    description: Many small files degrade scan throughput
+    severity: warning
+    impact: medium
+    threshold:
+      min_avg_file_mb: 8
+    recommendation: >
+      Run OPTIMIZE. Enable auto-compaction. For UC managed tables, enable
+      Predictive Optimization.
+
+  - id: qp_no_photon
+    category: dbsql_performance
+    name: No Photon Engine Usage
+    description: Photon vectorized engine is not being used for this query
+    severity: warning
+    impact: medium
+    recommendation: >
+      Ensure SQL warehouse has Photon enabled. Replace UDFs with built-in functions.
+
+  - id: qp_low_photon
+    category: dbsql_performance
+    name: Low Photon Utilization
+    description: Many plan nodes falling back to JVM engine instead of Photon
+    severity: info
+    impact: low
+    recommendation: >
+      Check for UDFs or unsupported operations. Replace with built-in SQL functions.
+
+  - id: qp_select_star
+    category: dbsql_performance
+    name: SELECT * Anti-Pattern
+    description: Selecting all columns defeats column pruning and increases I/O
+    severity: info
+    impact: medium
+    recommendation: >
+      Select only needed columns. Remove unused columns from Power BI model.
+
+  - id: qp_order_by_no_limit
+    category: dbsql_performance
+    name: ORDER BY Without LIMIT
+    description: Full sort without LIMIT is expensive, requires single-partition shuffle
+    severity: warning
+    impact: medium
+    recommendation: >
+      Add LIMIT clause. Pre-sort via materialized view or Liquid Clustering.
+
+  - id: qp_high_metadata_time
+    category: dbsql_performance
+    name: High Metadata Resolution Time
+    description: Unity Catalog metadata lookup is slow, indicating complex views or many tables
+    severity: warning
+    impact: medium
+    threshold:
+      metadata_time_ms: 2000
+    recommendation: >
+      Simplify query. Flatten nested view chains. Reduce referenced tables.
+
+  - id: qp_missing_analyze_table
+    category: dbsql_performance
+    name: Table Statistics Likely Missing
+    description: Multiple signals suggest the optimizer lacks accurate table statistics
+    severity: warning
+    impact: high
+    recommendation: >
+      Run ANALYZE TABLE COMPUTE STATISTICS FOR ALL COLUMNS on all referenced tables.
+
+  - id: qp_pbi_generated
+    category: dbsql_performance
+    name: Power BI-Generated Query
+    description: Auto-generated SQL from Power BI may not be optimal for Databricks
+    severity: info
+    impact: medium
+    recommendation: >
+      Push complex DAX calculations into Databricks SQL views or materialized
+      views. Set dimension tables to Dual mode.
